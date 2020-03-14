@@ -51,6 +51,21 @@ class Projector2D(Layer):
 	def compute_output_shape(self, input_shape):
 		return (input_shape[0], input_shape[1]*self.f, input_shape[2]*self.f, input_shape[3])
 
+class myReshape(Layer):
+
+	def __init__(self, shape, **kwargs):
+		super(myReshape, self).__init__(**kwargs)
+		self.shape = shape
+
+	def build(self, input_shape):
+		super(myReshape, self).build(input_shape) 
+
+	def call(self, x):
+		return K.reshape(x, shape=(x.shape[0],)+self.shape)
+
+	def compute_output_shape(self, input_shape):
+		return ((input_shape[0],)+self.shape)
+		
 class myFlatten(Layer):
 
 	def __init__(self, **kwargs):
@@ -147,8 +162,6 @@ class ConKern_Scale_Detector():
 				conv2 = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((1, 1, int(frames/2), 1))(conv2))
 				Y = FixedWeightConv2D()([Y, conv2])
 				Y = Projector2D(2**(i+1))(Y)
-				mt = Model([I, C], Y)
-				mt.summary()
 				L.append(Y)
 				frames *= 2
 		self.detector = Model([I, C], L)
@@ -158,8 +171,9 @@ class ConKern_Scale_Detector():
 		mat = Dense(frames*rows*cols)(Dense(1)(Dense(self.num_classes)(C)))
 		mat = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((frames*rows*cols, 1))(mat))
 		X = FixedWeightDense()([X, mat])
-		L = Add()([L, K.reshape(RepeatVector(self.img_rows*self.img_cols)(X), (self.batch_size,self.img_rows,self.img_cols,1))])
-		print(L)
+		X = myReshape(shape=(self.img_rows,self.img_cols,1))(RepeatVector(self.img_rows*self.img_cols)(X))
+		L.append(X)
+		L = Concatenate()(L)
 		self.detector = Model([I, C], L)
 		self.detector.summary()
 		
