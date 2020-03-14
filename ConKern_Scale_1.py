@@ -115,17 +115,11 @@ class ConKern_Scale_Detector():
 				conv = BatchNormalization(gamma_initializer=Constant(1/(1.5*frames)**0.5))(Reshape((1, 1, frames, int(frames/2)))(conv))
 				Y = FixedWeightConv2D()([X, conv])
 				Y = Activation('relu')(Y)
-				mt = Model([I, C], conv)
-				mt.summary()
 				conv2 = Dense(1*1*int(frames/2)*1)(Dense(1)(Dense(self.num_classes)(C)))
 				conv2 = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((1, 1, int(frames/2), 1))(conv2))
 				Y = FixedWeightConv2D()([Y, conv2])
 				Y = UpSampling2D(2**(i+1))(Y)
-				mt = Model([I, C], Y)
-				mt.summary()
 				Y = Conv2D(1, self.kernel_sizes[i], kernel_initializer='ones', trainable=False, padding='same')(Y)
-				mt = Model([I, C], Y)
-				mt.summary()
 				if L is None:
 					L = Y
 				else:
@@ -136,7 +130,7 @@ class ConKern_Scale_Detector():
 		mat = Dense(frames*rows*cols)(Dense(1)(Dense(self.num_classes)(C)))
 		mat = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((frames*rows*cols, 1))(mat))
 		X = FixedWeightDense()([X, mat])
-		L2 = Add()([L, K.reshape(RepeatVector(self.img_rows*self.img_cols)(X), (self.batch_size,self.img_rows,self.img_cols,1))])
+		L = Add()([L, K.reshape(RepeatVector(self.img_rows*self.img_cols)(X), (self.batch_size,self.img_rows,self.img_cols,1))])
 		print(L)
 		self.detector = Model([I, C], L)
 		self.detector.summary()
