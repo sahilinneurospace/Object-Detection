@@ -2,7 +2,7 @@ from __future__ import print_function, division
 
 from keras.datasets import mnist
 from keras.layers import Input, InputLayer, Dense, Reshape, Flatten, Dropout, Concatenate, Average, Multiply, Add
-from keras.layers import BatchNormalization, Activation, ZeroPadding2D, MaxPooling2D
+from keras.layers import BatchNormalization, Activation, ZeroPadding2D, MaxPooling2D, RepeatVector
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
@@ -75,7 +75,7 @@ class FixedWeightConv2D(Layer):
 		shape_a, shape_b = input_shape
 		return (shape_a[0], shape_a[1], shape_a[2], shape_b[-1])
 
-class ParaGAN():
+class ConKern_Scale():
 	
 	def __init__(self, img_rows=75, img_cols=100, img_channels=3, range_cover=[5, 10, 20, 40, 80], output_layers=[0, 1, 2, 3, 4], batch_size=50, num_classes=10):
 		
@@ -95,7 +95,7 @@ class ParaGAN():
 		frames = 64
 		L = []
 		for i in range(len(self.range_cover)):
-			X = Conv2D(frames, kernel_size=self.kernel_sizes[i], strides=2, activation='relu')(I)
+			X = Conv2D(frames, kernel_size=self.kernel_sizes[i], strides=2, activation='relu', padding='same')(I)
 			X = BatchNormalization(momentum=0.9)(X)
 			if i in self.output_layers:
 				conv = Dense(1*1*frames*int(frames/2))(Dense(1)(Dense(self.num_classes)(C)))
@@ -106,6 +106,10 @@ class ParaGAN():
 				conv2 = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((1, 1, int(frames/2), 1))(conv2))
 				Y = FixedWeightConv2D()([Y, conv2])
 				Y = Activation('sigmoid')
+				for j in range(i+1):
+					Y = UpSampling2D()(Y)
+				upconv = Constant(value=2**(i+1)/self.kernel_sizes[i], shape=(self.kernel_sizes[i],self.kernel_sizes[i],1,1))
+				Y = FixedWeightConv2D()([Y, upconv])
 				L.append(Y)
 			frames *= 2
 		X = Flatten()(X)
@@ -113,5 +117,6 @@ class ParaGAN():
 		mat = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((frames, 1))(mat))
 		X = FixedWeightDense()([X, mat])
 		X = Activation('sigmoid')
-		L.append(X)
+		L.append(Reshape((self.img_rows,self.img_cols, 1))(RepeatVector(self.img_rows*self.img_cols)(X)))
+		Y = Concatenate()(L)
 		self.detector = model([I, C], L)
