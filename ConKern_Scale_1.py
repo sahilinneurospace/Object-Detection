@@ -19,7 +19,7 @@ import scipy
 import random
 from keras import backend as K
 from keras.layers import Layer, AveragePooling2D, Reshape, Flatten
-from keras.initializers import Constant
+from keras.initializers import Constant, Ones
 
 import numpy as np
 
@@ -115,14 +115,15 @@ class ConKern_Scale_Detector():
 				conv = BatchNormalization(gamma_initializer=Constant(1/(1.5*frames)**0.5))(Reshape((1, 1, frames, int(frames/2)))(conv))
 				Y = FixedWeightConv2D()([X, conv])
 				Y = Activation('relu')(Y)
+				mt = Model([I, C], conv)
+				mt.summary()
 				conv2 = Dense(1*1*int(frames/2)*1)(Dense(1)(Dense(self.num_classes)(C)))
 				conv2 = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((1, 1, int(frames/2), 1))(conv2))
 				Y = FixedWeightConv2D()([Y, conv2])
 				Y = UpSampling2D(2**(i+1))(Y)
 				mt = Model([I, C], Y)
 				mt.summary()
-				upconv = K.constant(value=2**(i+1)/self.kernel_sizes[i], shape=(self.batch_size,self.kernel_sizes[i],self.kernel_sizes[i],1,1))
-				Y = FixedWeightConv2D()([Y, upconv])
+				Y = Conv2D(1, self.kernel_sizes[i], kernel_initializer='ones', trainable=False, padding='same')(Y)
 				mt = Model([I, C], Y)
 				mt.summary()
 				if L is None:
