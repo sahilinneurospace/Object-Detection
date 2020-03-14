@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 
 from keras.datasets import mnist
-from keras.layers import Input, InputLayer, Dense, Reshape, Flatten, Dropout, Concatenate, Average, Multiply, Add
+from keras.layers import Input, InputLayer, Dense, Reshape, Flatten, Dropout, Concatenate, Average, Multiply, Add, add
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D, MaxPooling2D, RepeatVector
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
@@ -23,13 +23,19 @@ from keras.initializers import Constant
 
 import numpy as np
 
-def pgan_loss(y_true, y_pred):
-	print(y_true, y_pred)
-	age_true, race_true, y_true = y_true[:, 1], y_true[:, 2:], y_true[:, 0]
-	age_pred, race_pred, y_pred = y_pred[:, 1], y_pred[:, 2:], y_pred[:, 0]
-	age_loss = tf.reduce_mean(tf.to_float(tf.less(age_true, 20))*tf.maximum(tf.abs(age_pred-age_true)-5, 0) + tf.to_float(tf.logical_and(tf.greater_equal(age_true,20), tf.less(age_true,55)))*tf.maximum(tf.abs(age_pred-age_true)-10, 0) + tf.to_float(tf.logical_and(tf.greater_equal(age_true,55), tf.less(age_true,85)))*tf.maximum(tf.abs(age_pred-age_true)-20, 0) + tf.to_float(tf.greater_equal(age_true,85))*tf.maximum(tf.abs(age_pred-age_true)-30, 0))
-	race_loss = tf.reduce_mean(tf.nn.softmax_cross_entropy_with_logits(labels=race_true, logits=race_pred))
-	return -(1-y_true)*K.log(1-y_pred) - y_true*(K.log(y_pred)+y_pred*0.5*(age_loss+race_loss))
+class myFlatten(Layer):
+
+	def __init__(self, **kwargs):
+		super(myFlatten, self).__init__(**kwargs)
+
+	def build(self, input_shape):
+		super(myFlatten, self).build(input_shape) 
+
+	def call(self, x):
+		return K.reshape(x, shape=(x.shape[0], np.prod(x.shape[1:])))
+
+	def compute_output_shape(self, input_shape):
+		return (input_shape[0], np.prod(input_shape[1:]))
 
 class FixedWeightDense(Layer):
 
@@ -45,7 +51,7 @@ class FixedWeightDense(Layer):
 		a, b = x
 		L = []
 		for i in range(a.shape[0]):
-			L.append(K.squeeze(K.dot(K.expand_dims(a[i], axis=0), b[i], padding='same'), axis=0))
+			L.append(K.squeeze(K.dot(K.expand_dims(a[i], axis=0), b[i]), axis=0))
 		return K.stack(L, axis=0)
 
 	def compute_output_shape(self, input_shape):
@@ -75,27 +81,34 @@ class FixedWeightConv2D(Layer):
 		shape_a, shape_b = input_shape
 		return (shape_a[0], shape_a[1], shape_a[2], shape_b[-1])
 
-class ConKern_Scale():
+class ConKern_Scale_Detector():
 	
-	def __init__(self, img_rows=75, img_cols=100, img_channels=3, range_cover=[5, 10, 20, 40, 80], output_layers=[0, 1, 2, 3, 4], batch_size=50, num_classes=10):
+	def __init__(self, img_rows=96, img_cols=128, img_channels=3, kernel_sizes=None, num_layers=5, output_layers=[0, 1, 2, 3, 4], batch_size=50, num_classes=10):
 		
-		self.img_rows=75
-		self.img_cols=100
-		self.img_channels=3
+		self.img_rows=img_rows
+		self.img_cols=img_cols
+		self.img_channels=img_channels
 		self.img_shape = (img_rows, img_cols, img_channels, )
-		self.range_cover=[5, 10, 20, 40, 80]
-		self.output_layers=[0, 1, 2, 3, 4]
+		self.kernel_sizes=kernel_sizes
+		self.num_layers=num_layers
+		self.output_layers=output_layers
 		self.batch_size=batch_size
 		self.num_classes=num_classes
 		
-		self.kernel_sizes = [self.range_cover[0]] + [int((self.range_cover[i]-self.range_cover[i-1])/2) + 1 for i in range(1, len(self.range_cover))]
+		if self.kernel_sizes is None:
+			self.kernel_sizes = [5] * num_layers
 		
-		I = Input(shape=img_shape, batch_shape=(batch_shape, img_rows, img_cols, img_channels))
-		C = Input(shape=(num_classes,), batch_shape=(batch_size, num_classes))
+		I = Input(shape=self.img_shape, batch_shape=(self.batch_size, self.img_rows, self.img_cols, self.img_channels))
+		C = Input(shape=(self.num_classes,), batch_shape=(self.batch_size, self.num_classes))
 		frames = 64
-		L = []
-		for i in range(len(self.range_cover)):
-			X = Conv2D(frames, kernel_size=self.kernel_sizes[i], strides=2, activation='relu', padding='same')(I)
+		L = None
+		X = I
+		rows = self.img_rows
+		cols = self.img_cols
+		for i in range(self.num_layers):
+			rows = int(rows/2) + rows % 2
+			cols = int(cols/2) + cols % 2
+			X = Conv2D(frames, kernel_size=self.kernel_sizes[i], strides=2, activation='relu', padding='same')(X)
 			X = BatchNormalization(momentum=0.9)(X)
 			if i in self.output_layers:
 				conv = Dense(1*1*frames*int(frames/2))(Dense(1)(Dense(self.num_classes)(C)))
@@ -105,18 +118,27 @@ class ConKern_Scale():
 				conv2 = Dense(1*1*int(frames/2)*1)(Dense(1)(Dense(self.num_classes)(C)))
 				conv2 = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((1, 1, int(frames/2), 1))(conv2))
 				Y = FixedWeightConv2D()([Y, conv2])
-				Y = Activation('sigmoid')
-				for j in range(i+1):
-					Y = UpSampling2D()(Y)
-				upconv = Constant(value=2**(i+1)/self.kernel_sizes[i], shape=(self.kernel_sizes[i],self.kernel_sizes[i],1,1))
+				Y = UpSampling2D(2**(i+1))(Y)
+				mt = Model([I, C], Y)
+				mt.summary()
+				upconv = K.constant(value=2**(i+1)/self.kernel_sizes[i], shape=(self.batch_size,self.kernel_sizes[i],self.kernel_sizes[i],1,1))
 				Y = FixedWeightConv2D()([Y, upconv])
-				L.append(Y)
-			frames *= 2
-		X = Flatten()(X)
-		mat = Dense(frames*1)(Dense(1)(Dense(self.num_classes)(C)))
-		mat = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((frames, 1))(mat))
+				mt = Model([I, C], Y)
+				mt.summary()
+				if L is None:
+					L = Y
+				else:
+					L = Add()([L, Y])
+				frames *= 2
+		frames = int(frames/2)
+		X = myFlatten()(X)
+		mat = Dense(frames*rows*cols)(Dense(1)(Dense(self.num_classes)(C)))
+		mat = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((frames*rows*cols, 1))(mat))
 		X = FixedWeightDense()([X, mat])
-		X = Activation('sigmoid')
-		L.append(Reshape((self.img_rows,self.img_cols, 1))(RepeatVector(self.img_rows*self.img_cols)(X)))
-		Y = Concatenate()(L)
-		self.detector = model([I, C], L)
+		L2 = Add()([L, K.reshape(RepeatVector(self.img_rows*self.img_cols)(X), (self.batch_size,self.img_rows,self.img_cols,1))])
+		print(L)
+		self.detector = Model([I, C], L)
+		self.detector.summary()
+		
+if __name__ == '__main__':
+	detector = ConKern_Scale_Detector()
