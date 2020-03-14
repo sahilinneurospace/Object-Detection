@@ -23,6 +23,34 @@ from keras.initializers import Constant, Ones
 
 import numpy as np
 
+class Projector2D(Layer):
+
+	def __init__(self, factor, **kwargs):
+		super(Projector2D, self).__init__(**kwargs)
+		self.f = factor
+
+	def build(self, input_shape):
+		super(Projector2D, self).build(input_shape) 
+
+	def call(self, x):
+		L1 = []
+		R = tf.unstack(x, axis=1)
+		for i in range(len(R)):
+			L2 = []
+			C = tf.unstack(R[i], axis=1)
+			for j in range(len(C)):
+				v = C[j]
+				block = K.repeat(v, self.f**2)
+				block = K.reshape(block, (v.shape[0], self.f, self.f, v.shape[-1]))
+				L2.append(block)
+			row = K.concatenate(L2, axis=2)
+			L1.append(row)
+		Y = K.concatenate(L1, axis=1)
+		return Y
+
+	def compute_output_shape(self, input_shape):
+		return (input_shape[0], input_shape[1]*self.f, input_shape[2]*self.f, input_shape[3])
+
 class myFlatten(Layer):
 
 	def __init__(self, **kwargs):
@@ -101,7 +129,7 @@ class ConKern_Scale_Detector():
 		I = Input(shape=self.img_shape, batch_shape=(self.batch_size, self.img_rows, self.img_cols, self.img_channels))
 		C = Input(shape=(self.num_classes,), batch_shape=(self.batch_size, self.num_classes))
 		frames = 64
-		L = None
+		L = []
 		X = I
 		rows = self.img_rows
 		cols = self.img_cols
@@ -118,13 +146,13 @@ class ConKern_Scale_Detector():
 				conv2 = Dense(1*1*int(frames/2)*1)(Dense(1)(Dense(self.num_classes)(C)))
 				conv2 = BatchNormalization(gamma_initializer=Constant(1/(0.5*frames)**0.5))(Reshape((1, 1, int(frames/2), 1))(conv2))
 				Y = FixedWeightConv2D()([Y, conv2])
-				Y = UpSampling2D(2**(i+1))(Y)
-				Y = Conv2D(1, self.kernel_sizes[i], kernel_initializer='ones', trainable=False, padding='same')(Y)
-				if L is None:
-					L = Y
-				else:
-					L = Add()([L, Y])
+				Y = Projector2D(2**(i+1))(Y)
+				mt = Model([I, C], Y)
+				mt.summary()
+				L.append(Y)
 				frames *= 2
+		self.detector = Model([I, C], L)
+		self.detector.summary()
 		frames = int(frames/2)
 		X = myFlatten()(X)
 		mat = Dense(frames*rows*cols)(Dense(1)(Dense(self.num_classes)(C)))
