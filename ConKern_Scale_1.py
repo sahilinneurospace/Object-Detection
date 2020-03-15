@@ -124,6 +124,9 @@ class FixedWeightConv2D(Layer):
 		shape_a, shape_b = input_shape
 		return (shape_a[0], shape_a[1], shape_a[2], shape_b[-1])
 
+def detector_loss(y_true, y_pred):
+	return K.mean(K.binary_crossentropy(y_true, y_pred))
+
 class ConKern_Scale_Detector():
 	
 	def __init__(self, img_rows=96, img_cols=128, img_channels=3, kernel_sizes=None, num_layers=5, output_layers=[0, 1, 2, 3, 4], batch_size=50, num_classes=10):
@@ -175,6 +178,28 @@ class ConKern_Scale_Detector():
 		L = Activation('sigmoid')(L)
 		self.detector = Model([I, C], L)
 		self.detector.summary()
+		self.detector.compile(loss=detector_loss, optimizer=Adam(0.0002, 0.5, clipnorm=0.2))
 		
+	def train(self, epochs=1, n_discriminator_update=1, n_generator_update=2, batch_size=64, save_interval=500):
+
+		imgs = []
+		labels = []
+		bb_coords = []
+		
+		imgs = [np.array(scipy.misc.imresize(scipy.misc.imread(img), (self.img_rows, self.img_cols))) for img in imgs]
+		imgs = [x/127.5 - 1 for x in imgs]
+		I = np.array(imgs).astype(np.float32)
+		
+		C = np.zeros((len(labels), self.num_classes))
+		for i in range(len(labels)):
+			C[i, labels[i]-1] = 1
+		
+		Y = np.zeros((len(bb_coords), self.img_rows, self.img_cols, 1))
+		for i in range(len(bb_coords)):
+			for bb in bb_coords[i]:
+				Y[i, bb[0][0]:bb[1][0], bb[0][1]:bb[1][1], :] = 1
+		
+		self.detector.fit([I, C], Y, epochs=1, batch_size=self.batch_size, validation_split=0.01)
+
 if __name__ == '__main__':
 	detector = ConKern_Scale_Detector()
