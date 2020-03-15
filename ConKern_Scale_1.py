@@ -1,7 +1,7 @@
 from __future__ import print_function, division
 
 from keras.datasets import mnist
-from keras.layers import Input, InputLayer, Dense, Reshape, Flatten, Dropout, Concatenate, Average, Multiply, Add, add
+from keras.layers import Input, InputLayer, Dense, Reshape, Flatten, Dropout, Concatenate, Average, Multiply, Maximum
 from keras.layers import BatchNormalization, Activation, ZeroPadding2D, MaxPooling2D, RepeatVector
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
@@ -164,8 +164,6 @@ class ConKern_Scale_Detector():
 				Y = Projector2D(2**(i+1))(Y)
 				L.append(Y)
 				frames *= 2
-		self.detector = Model([I, C], L)
-		self.detector.summary()
 		frames = int(frames/2)
 		X = myFlatten()(X)
 		mat = Dense(frames*rows*cols)(Dense(1)(Dense(self.num_classes)(C)))
@@ -173,7 +171,7 @@ class ConKern_Scale_Detector():
 		X = FixedWeightDense()([X, mat])
 		X = myReshape(shape=(self.img_rows,self.img_cols,1))(RepeatVector(self.img_rows*self.img_cols)(X))
 		L.append(X)
-		L = Concatenate()(L)
+		L = Maximum()(L)
 		self.detector = Model([I, C], L)
 		self.detector.summary()
 		
