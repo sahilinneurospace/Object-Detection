@@ -172,6 +172,7 @@ class ConKern_Scale_Detector():
 		X = myReshape(shape=(self.img_rows,self.img_cols,1))(RepeatVector(self.img_rows*self.img_cols)(X))
 		L.append(X)
 		L = Maximum()(L)
+		L = Activation('sigmoid')(L)
 		self.detector = Model([I, C], L)
 		self.detector.summary()
 		
