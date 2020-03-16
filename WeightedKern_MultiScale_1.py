@@ -105,7 +105,7 @@ class FixedWeightDense(Layer):
 def detector_loss(y_true, y_pred):
 	return K.mean(K.binary_crossentropy(y_true, y_pred))
 
-class ConKern_Scale_Detector():
+class WeightedKern_Scale_Detector():
 	
 	def __init__(self, img_rows=96, img_cols=128, img_channels=3, kernel_sizes=None, num_layers=5, output_layers=[0, 1, 2, 3, 4], batch_size=50, num_classes=10):
 		
@@ -181,4 +181,4 @@ class ConKern_Scale_Detector():
 		self.detector.fit([I, C], Y, epochs=1, batch_size=self.batch_size, validation_split=0.01)
 
 if __name__ == '__main__':
-	detector = ConKern_Scale_Detector()
+	detector = WeightedKern_Scale_Detector()
