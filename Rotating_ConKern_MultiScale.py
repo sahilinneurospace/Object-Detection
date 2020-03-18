@@ -2,7 +2,7 @@ from __future__ import print_function, division
 
 from keras.datasets import mnist
 from keras.layers import Input, InputLayer, Dense, Reshape, Flatten, Dropout, Concatenate, Average, Multiply, Maximum
-from keras.layers import BatchNormalization, Activation, ZeroPadding2D, MaxPooling2D, RepeatVector
+from keras.layers import BatchNormalization, Activation, ZeroPadding2D, MaxPooling2D, RepeatVector, Lambda
 from keras.layers.advanced_activations import LeakyReLU
 from keras.layers.convolutional import UpSampling2D, Conv2D
 from keras.models import Sequential, Model
@@ -195,7 +195,10 @@ class RotatingConvCreator2D(Layer):
 			kern = tf.concat(rows, axis=1)
 			kerns_q.append(kern)
 		
-		return {"0": tf.concat(kerns, axis=-1), "1": tf.concat(kerns_q, axis=-1)}
+		return [tf.concat(kerns, axis=-1), tf.concat(kerns_q, axis=-1)]
+	
+	def compute_output_shape(self, input_shape):
+		return [(input_shape[0], input_shape[1], input_shape[2], input_shape[3], input_shape[4]*8), (input_shape[0], 2*input_shape[1]-1, 2*input_shape[2]-1, input_shape[3], input_shape[4]*8)]
 
 class MaxAssigner2D(Layer):
 	def __init__(self, span, **kwargs):
@@ -368,18 +371,20 @@ class ConKern_Scale_Detector():
 				Y2 = Activation('relu')(Y2)
 				conv2_2 = Dense(2*2*int(frames/2)*1)(Dense(1)(Dense(self.num_classes)(C)))
 				conv2_2 = BatchNormalization(gamma_initializer=Constant(1/(2*frames)**0.5))(Reshape((2, 2, int(frames/2), 1))(conv2_2))
-				Y2 = FixedWeightConv2D()([Y2, conv2_2])
+				conv2_2_1, conv2_2_2 = RotatingConvCreator2D()(conv2_2)
+				Y2 = Concatenate()([FixedWeightConv2D()([Y2, conv2_2_1]), FixedWeightConv2D()([Y2, conv2_2_2])])
+				Y2 = Lambda(lambda x: K.expand_dims(K.max(x, axis=-1), axis=3))(Y2)
 				Y2 = MaxAssigner2D(2)(Y2)
 				
-				conv3_1 = Dense(3*3*frames*int(frames/2))(Dense(1)(Dense(self.num_classes)(C)))
-				conv3_1 = BatchNormalization(gamma_initializer=Constant(1/(1.5*frames)**0.5))(Reshape((3, 3, frames, int(frames/2)))(conv3_1))
-				conv3_1 = RotatingConvCreator2D()(conv3_1)
-				print(conv3_1)
+				conv3_1 = Dense(1*1*frames*int(frames/2))(Dense(1)(Dense(self.num_classes)(C)))
+				conv3_1 = BatchNormalization(gamma_initializer=Constant(1/(1.5*frames)**0.5))(Reshape((1, 1, frames, int(frames/2)))(conv3_1))
 				Y3 = FixedWeightConv2D()([X, conv3_1])
 				Y3 = Activation('relu')(Y3)
 				conv3_2 = Dense(3*3*int(frames/2)*1)(Dense(1)(Dense(self.num_classes)(C)))
 				conv3_2 = BatchNormalization(gamma_initializer=Constant(1/(4.5*frames)**0.5))(Reshape((3, 3, int(frames/2), 1))(conv3_2))
-				Y3 = FixedWeightConv2D()([Y3, conv3_2])
+				conv3_2_1, conv3_2_2 = RotatingConvCreator2D()(conv3_2)
+				Y3 = Concatenate()([FixedWeightConv2D()([Y3, conv3_2_1]), FixedWeightConv2D()([Y3, conv3_2_2])])
+				Y3 = Lambda(lambda x: K.expand_dims(K.max(x, axis=-1), axis=3))(Y3)
 				Y3 = MaxAssigner2D(3)(Y3)
 				
 				Y = Maximum()([Y1, Y2, Y3])
